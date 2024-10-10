@@ -1,4 +1,13 @@
 #!/bin/bash
+# lidar_info
+#
+# Generates vector dataset of lidar file metadata
+#
+# author: abulen
+# Requires:
+# - PDAL
+# - GDAL
+# - (rclone: for indexing all files from url path)
 src=$1
 dst=$2
 
@@ -58,12 +67,26 @@ feature() {
 directory(){
   d_src=$1
   d_dst=$2
-  # find lidar files and create features
-  find "$d_src" -type f -regextype posix-egrep -regex ".*\.(las|laz)$" | while read -r f
+  # find lidar files
+  if [[ -d $d_src ]]; then
+    readarray -d '' paths < <(find "$d_src" -type f -regextype posix-egrep -regex ".*\.(las|laz)$" -print0)
+  else
+    url=$d_src
+    if [[ "$url" == *"/" ]]; then
+      jq_url="$url"
+      url="${url::-1}"
+    else
+      jq_url="$url/"
+    fi
+    json=$(rclone lsjson --files-only -R --include=**.laz --http-url $url :http:)
+    readarray -t paths < <(jq --raw-output --arg url $jq_url 'map($url + .Path) | .[]'  <<< "$json")
+  fi
+  # create features
+  for path in "${paths[@]}"
   do
-    name=$(basename -- "$f")
+    name=$(basename -- "$path")
     tmp="/tmp/${name%.*}.geojson"
-    feature "$f" "$tmp"
+    feature "$path" "$tmp"
     if [[ -f $d_dst ]]; then
       ogr2ogr -append "$d_dst" "$tmp"
     else
@@ -73,16 +96,14 @@ directory(){
   done
 }
 
+
 # Remove existing output dataset
 if [[ -f $dst ]]; then
   rm "$dst"
 fi
 
-if [[ -d $src ]]; then
-    directory "$src" "$dst"
-elif [[ -f $src ]]; then
-    feature "$src" "$dst"
+if [[ $src == *".las" || $src == *".laz" ]]; then
+  feature "$src" "$dst"
 else
-    echo "$src is not valid"
-    exit 1
+  directory "$src" "$dst"
 fi
