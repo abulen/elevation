@@ -9,6 +9,7 @@
 # - (rclone: for indexing all files from url path)
 src=$1
 dst=$2
+layer=$3
 
 feature() {
   f_src=$1
@@ -30,7 +31,7 @@ feature() {
   "type", "blocK_x", "block_y",
   "z_min", "z_max", "no_data",
   "geometry", "info"] as $header |
-  [.description,
+  [ (.description | sub("/vsicurl/"; "")),
   .driverLongName,
   .stac.["proj:projjson"].name,
   (.coordinateSystem.wkt | tostring),
@@ -57,6 +58,11 @@ feature() {
 directory() {
   d_src=$1
   d_dst=$2
+  d_layer=$3
+  if [[ -z $d_layer ]]; then
+    d_name=$(basename -- "$d_dst")
+    d_layer="${d_name%.*}"
+  fi
   # find raster files
   if [[ -d $d_src ]]; then
     readarray -d '' paths < <(find "$d_src" -type f -regextype posix-egrep -regex ".*\.(tif|img)$" -print0)
@@ -78,9 +84,9 @@ directory() {
     tmp="/tmp/${name%.*}.geojson"
     feature "$path" "$tmp"
     if [[ -f $d_dst ]]; then
-      ogr2ogr -append "$d_dst" "$tmp"
+      ogr2ogr -append "$d_dst" "$tmp" -nln "$d_layer"
     else
-      ogr2ogr "$d_dst" "$tmp"
+      ogr2ogr "$d_dst" "$tmp" -nln "$d_layer"
     fi
     rm "$tmp"
   done
@@ -93,5 +99,5 @@ fi
 if [[ $src == *".tif" || $src == *".img" ]]; then
   feature "$src" "$dst"
 else
-  directory "$src" "$dst"
+  directory "$src" "$dst" "$layer"
 fi
