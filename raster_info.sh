@@ -7,13 +7,34 @@
 # Requires:
 # - GDAL
 # - (rclone: for indexing all files from url path)
+
+# Get optional arguments
+while getopts ":l:" opt; do
+  case $opt in
+    l)
+      layer="$OPTARG"
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      ;;
+  esac
+done
+# get input/output
+shift $(($OPTIND - 1))
 src=$1
 dst=$2
-layer=$3
 
 feature() {
   f_src=$1
   f_dst=$2
+  f_layer=$3
+  if [[ -z $f_layer ]]; then
+    f_name=$(basename -- "$f_dst")
+    f_layer="${f_name%.*}"
+  fi
   if [[ $f_src == "http"* ]]; then
     f_src="/vsicurl/$f_src"
   fi
@@ -51,7 +72,7 @@ feature() {
   if [[ -z $f_dst ]]; then
     ogr2ogr -oo GEOM_POSSIBLE_NAMES=geometry -oo KEEP_GEOM_COLUMNS=NO -s_srs wgs84 -t_srs "$srs" -f GeoJSON /vsistdout/ CSV:/vsistdin/ <<< "$csv"
   else
-    ogr2ogr -oo GEOM_POSSIBLE_NAMES=geometry -oo KEEP_GEOM_COLUMNS=NO -s_srs wgs84 -t_srs "$srs" "$f_dst" CSV:/vsistdin/ <<< "$csv"
+    ogr2ogr -oo GEOM_POSSIBLE_NAMES=geometry -oo KEEP_GEOM_COLUMNS=NO -s_srs wgs84 -t_srs "$srs" "$f_dst" -nln "$f_layer" CSV:/vsistdin/ <<< "$csv"
   fi
 }
 
@@ -97,7 +118,7 @@ if [[ -f $dst ]]; then
 fi
 
 if [[ $src == *".tif" || $src == *".img" ]]; then
-  feature "$src" "$dst"
+  feature "$src" "$dst" "$layer"
 else
   directory "$src" "$dst" "$layer"
 fi

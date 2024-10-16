@@ -8,13 +8,34 @@
 # - PDAL
 # - GDAL
 # - (rclone: for indexing all files from url path)
+
+# Get optional arguments
+while getopts ":l:" opt; do
+  case $opt in
+    l)
+      layer="$OPTARG"
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      ;;
+  esac
+done
+# get input/output
+shift $(($OPTIND - 1))
 src=$1
 dst=$2
-layer=$3
 
 feature() {
   f_src=$1
   f_dst=$2
+  f_layer=$3
+  if [[ -z $f_layer ]]; then
+    f_name=$(basename -- "$f_dst")
+    f_layer="${f_name%.*}"
+  fi
   # extract las info
   json=$(pdal info --metadata --stats --filters.stats.count="ReturnNumber,NumberOfReturns,Classification,PointSourceId,Synthetic,Withheld,Overlap" $f_src)
   # parse to csv
@@ -61,7 +82,7 @@ feature() {
   if [[ -z $f_dst ]]; then
     ogr2ogr -oo GEOM_POSSIBLE_NAMES=geometry -oo KEEP_GEOM_COLUMNS=NO -a_srs "$srs" -f GeoJSON /vsistdout/ CSV:/vsistdin/ <<< "$csv"
   else
-    ogr2ogr -oo GEOM_POSSIBLE_NAMES=geometry -oo KEEP_GEOM_COLUMNS=NO -a_srs "$srs" "$f_dst" CSV:/vsistdin/ <<< "$csv"
+    ogr2ogr -oo GEOM_POSSIBLE_NAMES=geometry -oo KEEP_GEOM_COLUMNS=NO -a_srs "$srs" "$f_dst" -nln "$f_layer" CSV:/vsistdin/ <<< "$csv"
   fi
 }
 
@@ -109,7 +130,7 @@ if [[ -f $dst ]]; then
 fi
 
 if [[ $src == *".las" || $src == *".laz" ]]; then
-  feature "$src" "$dst"
+  feature "$src" "$dst" "$layer"
 else
   directory "$src" "$dst" "$layer"
 fi
